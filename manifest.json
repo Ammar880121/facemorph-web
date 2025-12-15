@@ -2,7 +2,8 @@
   "name": "Face Morph Pro",
   "short_name": "Face Morph",
   "description": "Real-time face morphing - Transform your face into celebrities, animals, and more!",
-  "start_url": "/",
+  "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#0d0d1a",
   "theme_color": "#1a1a2e",
@@ -57,12 +58,16 @@
       "purpose": "any maskable"
     }
   ],
-  "categories": ["entertainment", "photo", "social"],
+  "categories": [
+    "entertainment",
+    "photo",
+    "social"
+  ],
   "screenshots": [],
   "shortcuts": [
     {
       "name": "Open Camera",
-      "url": "/",
+      "url": "./index.html",
       "description": "Start face morphing"
     }
   ]
