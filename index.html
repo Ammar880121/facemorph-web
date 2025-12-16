@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="#1a0a2e">
+    <meta name="theme-color" content="#1a1a2e">
     <meta name="description" content="Face Morph Pro - Real-time face morphing web application">
 
     <!-- PWA Meta Tags -->
@@ -13,7 +13,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Face Morph">
     <meta name="application-name" content="Face Morph Pro">
-    <meta name="msapplication-TileColor" content="#1a0a2e">
+    <meta name="msapplication-TileColor" content="#1a1a2e">
     <meta name="msapplication-tap-highlight" content="no">
 
     <!-- Open Graph / Social Media -->
@@ -21,122 +21,140 @@
     <meta property="og:title" content="Face Morph Pro">
     <meta property="og:description"
         content="Real-time face morphing - Transform your face into celebrities, animals, and more!">
-    <meta property="og:image" content="icons/app-icon.png">
+    <meta property="og:image" content="icons/icon-512.png">
 
     <!-- App Icons -->
-    <link rel="apple-touch-icon" href="icons/app-icon.png">
-    <link rel="icon" type="image/png" href="icons/app-icon.png">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="icons/icon-16.png">
     <link rel="manifest" href="manifest.json">
 
     <title>Face Morph Pro</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap"
-        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
 </head>
 
 <body>
-    <!-- Full Screen Camera Container -->
-    <div class="fullscreen-app">
-        <!-- Video Layer -->
-        <video id="video" autoplay playsinline muted></video>
-        <canvas id="outputCanvas"></canvas>
+    <div class="app-container">
+        <!-- Sidebar (Desktop) -->
+        <aside class="sidebar" id="sidebar">
+            <!-- Category Tabs -->
+            <nav class="category-tabs">
+                <button class="tab-btn active" data-category="animals">
+                    <span class="tab-icon">🦁</span>
+                    <span class="tab-label">ANI</span>
+                </button>
+                <button class="tab-btn" data-category="celebs">
+                    <span class="tab-icon">⭐</span>
+                    <span class="tab-label">CEL</span>
+                </button>
+                <button class="tab-btn" data-category="history">
+                    <span class="tab-icon">📜</span>
+                    <span class="tab-label">HIS</span>
+                </button>
+                <button class="tab-btn" data-category="races">
+                    <span class="tab-icon">🌍</span>
+                    <span class="tab-label">RAC</span>
+                </button>
+                <button class="tab-btn" data-category="addons">
+                    <span class="tab-icon">🎭</span>
+                    <span class="tab-label">ADD</span>
+                </button>
+            </nav>
 
-        <!-- Neon Overlay Effects -->
-        <div class="neon-border"></div>
-
-        <!-- Top Bar -->
-        <header class="top-bar">
-            <div class="app-logo">
-                <img src="icons/app-icon.png" alt="Face Morph">
-                <span>FACE MORPH</span>
+            <!-- Thumbnail Grid -->
+            <div class="thumbnail-container">
+                <div class="thumbnail-grid" id="thumbnailGrid">
+                    <!-- Thumbnails will be populated by JavaScript -->
+                </div>
             </div>
-            <div class="top-actions">
-                <button class="neon-btn small" id="scanBtn" title="Scan Gender">
-                    <span class="btn-glow"></span>
-                    <span class="icon">⚥</span>
+
+            <!-- Action Buttons -->
+            <div class="action-buttons">
+                <button class="action-btn scan-btn" id="scanBtn">
+                    <span class="btn-icon">⚥</span>
+                    <span class="btn-label">SCAN</span>
                     <span class="scan-result" id="scanResult">--</span>
                 </button>
+                <button class="action-btn record-btn" id="recordBtn">
+                    <span class="btn-icon">🎥</span>
+                    <span class="btn-label">RECORD</span>
+                </button>
+                <button class="action-btn snapshot-btn" id="snapshotBtn">
+                    <span class="btn-icon">📷</span>
+                    <span class="btn-label">SNAPSHOT</span>
+                </button>
             </div>
-        </header>
+        </aside>
 
-        <!-- Status Messages -->
-        <div class="status-toast" id="statusOverlay">
-            <span id="statusText"></span>
-        </div>
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Video Container -->
+            <div class="video-container" id="videoContainer">
+                <video id="video" autoplay playsinline muted></video>
+                <canvas id="outputCanvas"></canvas>
 
-        <!-- Loading Overlay -->
-        <div class="loading-overlay" id="loadingOverlay">
-            <div class="cyber-loader">
-                <div class="loader-ring"></div>
-                <div class="loader-ring"></div>
-                <div class="loader-ring"></div>
+                <!-- Status Messages -->
+                <div class="status-overlay" id="statusOverlay">
+                    <span class="status-text" id="statusText"></span>
+                </div>
+
+                <!-- Loading Overlay -->
+                <div class="loading-overlay" id="loadingOverlay">
+                    <div class="loader"></div>
+                    <span>Initializing Camera...</span>
+                </div>
+
+                <!-- No Face Detected Warning -->
+                <div class="no-face-warning" id="noFaceWarning">
+                    <span>👤 Position your face in frame</span>
+                </div>
             </div>
-            <span>INITIALIZING...</span>
-        </div>
 
-        <!-- No Face Warning -->
-        <div class="face-warning" id="noFaceWarning">
-            <div class="warning-icon">👤</div>
-            <span>POSITION FACE IN FRAME</span>
-        </div>
+            <!-- Controls -->
+            <div class="controls-container">
+                <!-- Morph Slider -->
+                <div class="morph-slider-container">
+                    <label for="morphSlider" class="slider-label">
+                        <span class="slider-title">MORPH</span>
+                        <span class="slider-value" id="morphValue">0%</span>
+                    </label>
+                    <input type="range" id="morphSlider" class="morph-slider" min="0" max="100" value="0">
+                </div>
 
-        <!-- Morph Slider Overlay -->
-        <div class="morph-control">
-            <div class="morph-slider-wrap">
-                <input type="range" id="morphSlider" class="cyber-slider" min="0" max="100" value="0">
-                <div class="slider-glow"></div>
+                <!-- Mobile Action Bar -->
+                <div class="mobile-action-bar">
+                    <button class="mobile-action-btn" id="mobileScanBtn" title="Scan Gender">
+                        <span>⚥</span>
+                    </button>
+                    <button class="mobile-action-btn" id="mobileRecordBtn" title="Record">
+                        <span>🎥</span>
+                    </button>
+                    <button class="mobile-action-btn" id="mobileSnapshotBtn" title="Snapshot">
+                        <span>📷</span>
+                    </button>
+                    <button class="mobile-action-btn" id="toggleSidebarBtn" title="Toggle Menu">
+                        <span>☰</span>
+                    </button>
+                </div>
             </div>
-            <div class="morph-value" id="morphValue">0%</div>
-        </div>
 
-        <!-- Category Tabs -->
-        <nav class="category-bar">
-            <button class="category-btn active" data-category="animals">
-                <span class="cat-icon">🦁</span>
-                <span class="cat-label">ANIMALS</span>
-            </button>
-            <button class="category-btn" data-category="celebs">
-                <span class="cat-icon">⭐</span>
-                <span class="cat-label">CELEBS</span>
-            </button>
-            <button class="category-btn" data-category="history">
-                <span class="cat-icon">📜</span>
-                <span class="cat-label">HISTORY</span>
-            </button>
-            <button class="category-btn" data-category="races">
-                <span class="cat-icon">🌍</span>
-                <span class="cat-label">RACES</span>
-            </button>
-            <button class="category-btn" data-category="addons">
-                <span class="cat-icon">🎭</span>
-                <span class="cat-label">ADDONS</span>
-            </button>
-        </nav>
+            <!-- Mobile Category Bar -->
+            <nav class="mobile-category-bar" id="mobileCategoryBar">
+                <button class="mobile-tab-btn active" data-category="animals">🦁 ANI</button>
+                <button class="mobile-tab-btn" data-category="celebs">⭐ CEL</button>
+                <button class="mobile-tab-btn" data-category="history">📜 HIS</button>
+                <button class="mobile-tab-btn" data-category="races">🌍 RAC</button>
+                <button class="mobile-tab-btn" data-category="addons">🎭 ADD</button>
+            </nav>
 
-        <!-- Thumbnail Drawer -->
-        <div class="thumbnail-drawer" id="thumbnailDrawer">
-            <div class="drawer-handle" id="drawerHandle">
-                <div class="handle-bar"></div>
+            <!-- Mobile Thumbnail Strip -->
+            <div class="mobile-thumbnail-strip" id="mobileThumbnailStrip">
+                <!-- Thumbnails will be populated by JavaScript -->
             </div>
-            <div class="thumbnail-scroll" id="thumbnailGrid">
-                <!-- Thumbnails populated by JS -->
-            </div>
-        </div>
-
-        <!-- Action Buttons -->
-        <div class="action-bar">
-            <button class="action-btn record" id="recordBtn" title="Record Video">
-                <span class="btn-glow"></span>
-                <span class="icon">🎥</span>
-            </button>
-            <button class="action-btn snapshot" id="snapshotBtn" title="Take Snapshot">
-                <span class="btn-glow"></span>
-                <span class="icon">📸</span>
-            </button>
-        </div>
+        </main>
     </div>
 
     <!-- Hidden elements for processing -->
@@ -145,6 +163,7 @@
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <!-- Face-API.js for gender detection -->
     <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
     <script src="morph-engine.js"></script>
     <script src="app.js"></script>
