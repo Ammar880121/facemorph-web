@@ -350,13 +350,16 @@ class FaceMorphApp {
             const outputData = this.outputCtx.createImageData(videoWidth, videoHeight);
 
             // Perform morphing using the engine
+            // Pass isAnimal flag for special opacity handling
+            const isAnimal = this.state.currentCategory === 'animals';
             this.morphEngine.morphFace(
                 srcData,
                 targetData,
                 this.cameraLandmarks,
                 this.targetLandmarks,
                 alpha,
-                outputData
+                outputData,
+                isAnimal
             );
 
             // Draw result

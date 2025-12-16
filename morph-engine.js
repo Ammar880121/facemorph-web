@@ -460,8 +460,9 @@ class MorphEngine {
     /**
      * Perform face morphing - main function
      * This matches the Python implementation more closely
+     * @param {boolean} isAnimal - If true, use full opacity for animals
      */
-    morphFace(srcImageData, targetImageData, srcLandmarks, targetLandmarks, alpha, outputData) {
+    morphFace(srcImageData, targetImageData, srcLandmarks, targetLandmarks, alpha, outputData, isAnimal = false) {
         try {
             const width = outputData.width;
             const height = outputData.height;
@@ -585,11 +586,14 @@ class MorphEngine {
             for (let i = 0; i < outputData.data.length; i += 4) {
                 const maskValue = mask.data[i] / 255;
 
-                // At 100% (alpha close to 1), show full morph in entire masked area
-                // Use sqrt of maskValue for smoother but still strong edge transition
+                // Calculate blend factor based on category
                 let blendFactor;
-                if (alpha > 0.95) {
-                    // At 100%: boost entire masked area, use sqrt for smooth edges
+                if (isAnimal) {
+                    // For animals: use full opacity in masked area
+                    // No transparency - if mask > 0.1, show full morph
+                    blendFactor = maskValue > 0.1 ? alpha : 0;
+                } else if (alpha > 0.95) {
+                    // At 100% for humans: boost entire masked area
                     blendFactor = Math.sqrt(maskValue) * alpha;
                 } else {
                     // Normal blend for lower percentages
