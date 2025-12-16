@@ -585,9 +585,14 @@ class MorphEngine {
             for (let i = 0; i < outputData.data.length; i += 4) {
                 const maskValue = mask.data[i] / 255;
 
-                // Use linear blend for maximum opacity at 100%
-                // At alpha=1.0, the entire masked area should show the morph
-                const blendFactor = maskValue * alpha;
+                // Boost blend factor for more opacity at 100%
+                // Use aggressive blending - if mask is strong, show full morph
+                let blendFactor = maskValue * alpha;
+
+                // At 100% (alpha=1), make center of face fully opaque
+                if (alpha > 0.95 && maskValue > 0.5) {
+                    blendFactor = Math.min(1, blendFactor * 1.5);
+                }
 
                 // Only blend if we have valid warped data (alpha > 0)
                 const hasWarpedPixel = warpedData.data[i + 3] > 0;
