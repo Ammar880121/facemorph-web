@@ -10,7 +10,7 @@ class FaceMorphApp {
         this.outputCanvas = document.getElementById('outputCanvas');
         this.processingCanvas = document.getElementById('processingCanvas');
         this.thumbnailGrid = document.getElementById('thumbnailGrid');
-        this.mobileThumbnailStrip = document.getElementById('mobileThumbnailStrip');
+        this.mobileThumbnailStrip = document.getElementById('thumbnailGrid'); // Same element in new UI
         this.morphSlider = document.getElementById('morphSlider');
         this.morphValue = document.getElementById('morphValue');
         this.loadingOverlay = document.getElementById('loadingOverlay');
@@ -18,7 +18,7 @@ class FaceMorphApp {
         this.statusOverlay = document.getElementById('statusOverlay');
         this.statusText = document.getElementById('statusText');
         this.scanResult = document.getElementById('scanResult');
-        this.sidebar = document.getElementById('sidebar');
+        this.sidebar = null; // No sidebar in new UI
 
         // Canvas contexts
         this.outputCtx = this.outputCanvas.getContext('2d');
@@ -582,7 +582,7 @@ class FaceMorphApp {
         }
 
         // Update tab buttons
-        document.querySelectorAll('.tab-btn, .mobile-tab-btn').forEach(btn => {
+        document.querySelectorAll('.category-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.category === category);
         });
 
@@ -643,7 +643,7 @@ class FaceMorphApp {
         }
 
         // Update tab buttons
-        document.querySelectorAll('.tab-btn, .mobile-tab-btn').forEach(btn => {
+        document.querySelectorAll('.category-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.category === 'celebs');
         });
 
@@ -736,44 +736,21 @@ class FaceMorphApp {
             this.morphValue.textContent = `${e.target.value}%`;
         });
 
-        // Category tabs (desktop)
-        document.querySelectorAll('.tab-btn').forEach(btn => {
+        // Category tabs (new neon UI uses .category-btn)
+        document.querySelectorAll('.category-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 this.loadCategory(btn.dataset.category);
             });
         });
 
-        // Category tabs (mobile)
-        document.querySelectorAll('.mobile-tab-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                this.loadCategory(btn.dataset.category);
-            });
-        });
-
-        // Desktop buttons
-        document.getElementById('scanBtn').addEventListener('click', () => this.scanGender());
-        document.getElementById('recordBtn').addEventListener('click', () => this.toggleRecording());
-        document.getElementById('snapshotBtn').addEventListener('click', () => this.takeSnapshot());
-
-        // Mobile buttons
-        document.getElementById('mobileScanBtn').addEventListener('click', () => this.scanGender());
-        document.getElementById('mobileRecordBtn').addEventListener('click', () => this.toggleRecording());
-        document.getElementById('mobileSnapshotBtn').addEventListener('click', () => this.takeSnapshot());
-        document.getElementById('toggleSidebarBtn').addEventListener('click', () => this.toggleSidebar());
-
-        // Sidebar overlay click to close
-        document.addEventListener('click', (e) => {
-            if (this.state.sidebarOpen && !this.sidebar.contains(e.target) &&
-                !e.target.closest('#toggleSidebarBtn')) {
-                this.closeSidebar();
-            }
-        });
+        // Desktop/Mobile buttons (same in new UI)
+        document.getElementById('scanBtn')?.addEventListener('click', () => this.scanGender());
+        document.getElementById('recordBtn')?.addEventListener('click', () => this.toggleRecording());
+        document.getElementById('snapshotBtn')?.addEventListener('click', () => this.takeSnapshot());
 
         // Handle window resize
         window.addEventListener('resize', () => {
-            if (window.innerWidth > 768 && this.state.sidebarOpen) {
-                this.closeSidebar();
-            }
+            // Adjust canvas if needed
         });
     }
 
