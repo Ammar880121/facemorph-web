@@ -134,11 +134,8 @@ class FaceMorphApp {
         this.assets = {
             // Animals - symmetrical versions for better morphing
             animals: [
-                { name: 'Tiger', image: 'assets/animals/Tiger.jpeg', landmarks: 'assets/landmarks/animals/Tiger.json' },
-                { name: 'Dog', image: 'assets/animals/Dog_sym.png', landmarks: 'assets/landmarks/animals/Dog_sym.json' },
                 { name: 'Batrik', image: 'assets/animals/Batrik_sym.png', landmarks: 'assets/landmarks/animals/Batrik_sym.json' },
                 { name: 'Chimp', image: 'assets/animals/Chimp_sym.png', landmarks: 'assets/landmarks/animals/Chimp_sym.json' },
-                { name: 'Sloth', image: 'assets/animals/Sloth.png', landmarks: 'assets/landmarks/animals/Sloth.json' },
                 { name: 'Panda', image: 'assets/animals/Panda.png', landmarks: 'assets/landmarks/animals/Panda.json' }
             ],
             // Male celebrities
