@@ -585,13 +585,15 @@ class MorphEngine {
             for (let i = 0; i < outputData.data.length; i += 4) {
                 const maskValue = mask.data[i] / 255;
 
-                // Boost blend factor for more opacity at 100%
-                // Use aggressive blending - if mask is strong, show full morph
-                let blendFactor = maskValue * alpha;
-
-                // At 100% (alpha=1), make center of face fully opaque
-                if (alpha > 0.95 && maskValue > 0.5) {
-                    blendFactor = Math.min(1, blendFactor * 1.5);
+                // At 100% (alpha close to 1), show full morph in entire masked area
+                // Use sqrt of maskValue for smoother but still strong edge transition
+                let blendFactor;
+                if (alpha > 0.95) {
+                    // At 100%: boost entire masked area, use sqrt for smooth edges
+                    blendFactor = Math.sqrt(maskValue) * alpha;
+                } else {
+                    // Normal blend for lower percentages
+                    blendFactor = maskValue * alpha;
                 }
 
                 // Only blend if we have valid warped data (alpha > 0)
