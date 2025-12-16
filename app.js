@@ -136,8 +136,7 @@ class FaceMorphApp {
             animals: [
                 { name: 'Batrik', image: 'assets/animals/Batrik_sym.png', landmarks: 'assets/landmarks/animals/Batrik_sym.json' },
                 { name: 'Chimp', image: 'assets/animals/Chimp_sym.png', landmarks: 'assets/landmarks/animals/Chimp_sym.json' },
-                { name: 'Panda', image: 'assets/animals/Panda.png', landmarks: 'assets/landmarks/animals/Panda.json' },
-                { name: 'Sloth', image: 'assets/animals/SlothSwim.jpg', landmarks: 'assets/landmarks/animals/SlothSwim.json' }
+                { name: 'Panda', image: 'assets/animals/Panda.png', landmarks: 'assets/landmarks/animals/Panda.json' }
             ],
             // Male celebrities
             celebs: [
