@@ -172,11 +172,12 @@ class FaceMorphApp {
         this.galleryBadge.setAttribute('data-count', count);
     }
 
-    addToGallery(dataUrl, type = 'photo') {
+    addToGallery(dataUrl, type = 'photo', ext = null) {
         const item = {
             id: Date.now(),
             data: dataUrl,
             type: type,
+            ext: ext || (type === 'video' ? 'webm' : 'png'),
             timestamp: new Date().toISOString()
         };
         this.gallery.push(item);
@@ -245,7 +246,8 @@ class FaceMorphApp {
     downloadGalleryItem(item) {
         const link = document.createElement('a');
         link.href = item.data;
-        link.download = `facemorph_${item.id}.${item.type === 'video' ? 'webm' : 'png'}`;
+        const ext = item.ext || (item.type === 'video' ? 'webm' : 'png');
+        link.download = `facemorph_${item.id}.${ext}`;
         link.click();
     }
 
@@ -745,7 +747,28 @@ class FaceMorphApp {
                 this.stream.getAudioTracks().forEach(t => stream.addTrack(t));
             }
 
-            this.mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
+            // Detect supported MIME type (iOS doesn't support WebM)
+            let mimeType = '';
+            const mimeTypes = [
+                'video/mp4',
+                'video/webm;codecs=vp9',
+                'video/webm;codecs=vp8',
+                'video/webm',
+                ''  // Empty string = browser default
+            ];
+
+            for (const type of mimeTypes) {
+                if (type === '' || MediaRecorder.isTypeSupported(type)) {
+                    mimeType = type;
+                    break;
+                }
+            }
+
+            // Store the mime type for saving later
+            this.recordingMimeType = mimeType || 'video/webm';
+
+            const options = mimeType ? { mimeType } : {};
+            this.mediaRecorder = new MediaRecorder(stream, options);
             this.recordedChunks = [];
 
             this.mediaRecorder.ondataavailable = (e) => {
@@ -760,7 +783,8 @@ class FaceMorphApp {
             document.querySelectorAll('.filter-item')[index]?.classList.add('recording');
             this.showStatus('Recording...', false);
         } catch (e) {
-            this.showStatus('Recording failed', true);
+            console.error('[Recording] Error:', e);
+            this.showStatus('Recording not supported', true);
         }
     }
 
@@ -773,10 +797,13 @@ class FaceMorphApp {
 
     saveRecording() {
         if (this.recordedChunks.length === 0) return;
-        const blob = new Blob(this.recordedChunks, { type: 'video/webm' });
+        const mimeType = this.recordingMimeType || 'video/webm';
+        const blob = new Blob(this.recordedChunks, { type: mimeType });
         const reader = new FileReader();
         reader.onload = () => {
-            this.addToGallery(reader.result, 'video');
+            // Store the extension for download
+            const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+            this.addToGallery(reader.result, 'video', ext);
         };
         reader.readAsDataURL(blob);
     }
