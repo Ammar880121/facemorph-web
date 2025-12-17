@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="#1a1a2e">
+    <meta name="theme-color" content="#000000">
     <meta name="description" content="Face Morph Pro - Real-time face morphing web application">
 
     <!-- PWA Meta Tags -->
@@ -13,7 +13,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Face Morph">
     <meta name="application-name" content="Face Morph Pro">
-    <meta name="msapplication-TileColor" content="#1a1a2e">
+    <meta name="msapplication-TileColor" content="#000000">
     <meta name="msapplication-tap-highlight" content="no">
 
     <!-- Open Graph / Social Media -->
@@ -37,123 +37,198 @@
 
 <body>
     <div class="app-container">
-        <!-- Sidebar (Desktop) -->
-        <aside class="sidebar" id="sidebar">
-            <!-- Category Tabs -->
-            <nav class="category-tabs">
-                <button class="tab-btn active" data-category="animals">
-                    <span class="tab-icon">🦁</span>
-                    <span class="tab-label">ANI</span>
-                </button>
-                <button class="tab-btn" data-category="celebs">
-                    <span class="tab-icon">⭐</span>
-                    <span class="tab-label">CEL</span>
-                </button>
-                <button class="tab-btn" data-category="history">
-                    <span class="tab-icon">📜</span>
-                    <span class="tab-label">HIS</span>
-                </button>
-                <button class="tab-btn" data-category="races">
-                    <span class="tab-icon">🌍</span>
-                    <span class="tab-label">RAC</span>
-                </button>
-                <button class="tab-btn" data-category="addons">
-                    <span class="tab-icon">🎭</span>
-                    <span class="tab-label">ADD</span>
-                </button>
-            </nav>
+        <!-- Full Screen Camera -->
+        <div class="camera-view" id="cameraView">
+            <video id="video" autoplay playsinline muted></video>
+            <canvas id="outputCanvas"></canvas>
 
-            <!-- Thumbnail Grid -->
-            <div class="thumbnail-container">
-                <div class="thumbnail-grid" id="thumbnailGrid">
+            <!-- Top Bar -->
+            <div class="top-bar">
+                <div class="top-left">
+                    <button class="icon-btn profile-btn" id="profileBtn" title="Profile">
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path
+                                d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                        </svg>
+                    </button>
+                    <span class="user-name" id="userName">Guest</span>
+                </div>
+                <div class="top-right">
+                    <button class="icon-btn gallery-btn" id="galleryBtn" title="Gallery">
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path
+                                d="M22 16V4c0-1.1-.9-2-2-2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2zm-11-4l2.03 2.71L16 11l4 5H8l3-4zM2 6v14c0 1.1.9 2 2 2h14v-2H4V6H2z" />
+                        </svg>
+                        <span class="gallery-badge" id="galleryBadge">0</span>
+                    </button>
+                    <button class="icon-btn scan-btn-top" id="scanBtnTop" title="Scan Age & Gender">
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path
+                                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
+                        </svg>
+                        <span class="scan-badge" id="scanBadge"></span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Morph Slider at Top -->
+            <div class="morph-slider-container" id="morphSliderContainer">
+                <div class="slider-header">
+                    <span class="slider-label">MORPH</span>
+                    <span class="slider-value" id="morphValue">0%</span>
+                </div>
+                <input type="range" id="morphSlider" class="morph-slider" min="0" max="100" value="0">
+            </div>
+
+            <!-- Right Side Tools -->
+            <div class="right-tools">
+                <button class="tool-btn" id="flipCameraBtn" title="Flip Camera">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path
+                            d="M9 12c0 1.66 1.34 3 3 3s3-1.34 3-3-1.34-3-3-3-3 1.34-3 3zm13-2V6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2v-4l3-3-3-3zM4 18V6h16v12H4z" />
+                    </svg>
+                </button>
+                <button class="tool-btn" id="effectsBtn" title="Effects">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path
+                            d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Effects Panel -->
+            <div class="effects-panel hidden" id="effectsPanel">
+                <div class="effects-header">Effects</div>
+                <div class="effects-list">
+                    <button class="effect-btn active" data-effect="none">
+                        <div class="effect-preview none-preview"></div>
+                        <span>None</span>
+                    </button>
+                    <button class="effect-btn" data-effect="purple">
+                        <div class="effect-preview purple-preview"></div>
+                        <span>Purple</span>
+                    </button>
+                    <button class="effect-btn" data-effect="bw">
+                        <div class="effect-preview bw-preview"></div>
+                        <span>B&W</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Status Messages -->
+            <div class="status-overlay" id="statusOverlay">
+                <span class="status-text" id="statusText"></span>
+            </div>
+
+            <!-- Loading Overlay -->
+            <div class="loading-overlay" id="loadingOverlay">
+                <div class="loader"></div>
+                <span>Initializing Camera...</span>
+            </div>
+
+            <!-- No Face Detected Warning -->
+            <div class="no-face-warning" id="noFaceWarning">
+                <span>👤 Position your face in frame</span>
+            </div>
+
+            <!-- Scan Result Display -->
+            <div class="scan-result-display hidden" id="scanResultDisplay">
+                <div class="scan-result-content">
+                    <span class="scan-gender" id="scanGender">--</span>
+                    <span class="scan-age" id="scanAge">Age: --</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Section -->
+        <div class="bottom-section">
+            <!-- Filter Carousel -->
+            <div class="filter-carousel-container">
+                <div class="filter-carousel" id="filterCarousel">
                     <!-- Thumbnails will be populated by JavaScript -->
                 </div>
             </div>
 
-            <!-- Action Buttons -->
-            <div class="action-buttons">
-                <button class="action-btn scan-btn" id="scanBtn">
-                    <span class="btn-icon">⚥</span>
-                    <span class="btn-label">SCAN</span>
-                    <span class="scan-result" id="scanResult">--</span>
-                </button>
-                <button class="action-btn record-btn" id="recordBtn">
-                    <span class="btn-icon">🎥</span>
-                    <span class="btn-label">RECORD</span>
-                </button>
-                <button class="action-btn snapshot-btn" id="snapshotBtn">
-                    <span class="btn-icon">📷</span>
-                    <span class="btn-label">SNAPSHOT</span>
-                </button>
+            <!-- Capture Hint -->
+            <div class="capture-hint" id="captureHint">
+                <span>Tap to select • Tap again for photo • Hold for video</span>
             </div>
-        </aside>
+        </div>
 
-        <!-- Main Content -->
-        <main class="main-content">
-            <!-- Video Container -->
-            <div class="video-container" id="videoContainer">
-                <video id="video" autoplay playsinline muted></video>
-                <canvas id="outputCanvas"></canvas>
+        <!-- Bottom Navigation -->
+        <nav class="bottom-nav">
+            <button class="nav-btn" data-category="animals" title="Animals">
+                <span class="nav-icon">🦁</span>
+                <span class="nav-label">Animals</span>
+            </button>
+            <button class="nav-btn active" data-category="celebs" title="Celebs">
+                <span class="nav-icon">⭐</span>
+                <span class="nav-label">Celebs</span>
+            </button>
+            <button class="nav-btn" data-category="history" title="History">
+                <span class="nav-icon">📜</span>
+                <span class="nav-label">History</span>
+            </button>
+            <button class="nav-btn" data-category="races" title="Races">
+                <span class="nav-icon">🌍</span>
+                <span class="nav-label">Races</span>
+            </button>
+            <button class="nav-btn" data-category="addons" title="Addons">
+                <span class="nav-icon">🎭</span>
+                <span class="nav-label">Addons</span>
+            </button>
+        </nav>
+    </div>
 
-                <!-- Status Messages -->
-                <div class="status-overlay" id="statusOverlay">
-                    <span class="status-text" id="statusText"></span>
-                </div>
-
-                <!-- Loading Overlay -->
-                <div class="loading-overlay" id="loadingOverlay">
-                    <div class="loader"></div>
-                    <span>Initializing Camera...</span>
-                </div>
-
-                <!-- No Face Detected Warning -->
-                <div class="no-face-warning" id="noFaceWarning">
-                    <span>👤 Position your face in frame</span>
-                </div>
+    <!-- Profile Modal -->
+    <div class="modal-overlay hidden" id="profileModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Your Profile</h2>
+                <button class="modal-close" id="closeProfileModal">&times;</button>
             </div>
-
-            <!-- Controls -->
-            <div class="controls-container">
-                <!-- Morph Slider -->
-                <div class="morph-slider-container">
-                    <label for="morphSlider" class="slider-label">
-                        <span class="slider-title">MORPH</span>
-                        <span class="slider-value" id="morphValue">0%</span>
-                    </label>
-                    <input type="range" id="morphSlider" class="morph-slider" min="0" max="100" value="0">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="profileName">Name</label>
+                    <input type="text" id="profileName" placeholder="Enter your name" autocomplete="name">
                 </div>
-
-                <!-- Mobile Action Bar -->
-                <div class="mobile-action-bar">
-                    <button class="mobile-action-btn" id="mobileScanBtn" title="Scan Gender">
-                        <span>⚥</span>
-                    </button>
-                    <button class="mobile-action-btn" id="mobileRecordBtn" title="Record">
-                        <span>🎥</span>
-                    </button>
-                    <button class="mobile-action-btn" id="mobileSnapshotBtn" title="Snapshot">
-                        <span>📷</span>
-                    </button>
-                    <button class="mobile-action-btn" id="toggleSidebarBtn" title="Toggle Menu">
-                        <span>☰</span>
-                    </button>
+                <div class="form-group">
+                    <label for="profileEmail">Email</label>
+                    <input type="email" id="profileEmail" placeholder="Enter your email" autocomplete="email">
+                </div>
+                <div class="profile-avatar" id="profileAvatar">
+                    <span>?</span>
                 </div>
             </div>
-
-            <!-- Mobile Category Bar -->
-            <nav class="mobile-category-bar" id="mobileCategoryBar">
-                <button class="mobile-tab-btn active" data-category="animals">🦁 ANI</button>
-                <button class="mobile-tab-btn" data-category="celebs">⭐ CEL</button>
-                <button class="mobile-tab-btn" data-category="history">📜 HIS</button>
-                <button class="mobile-tab-btn" data-category="races">🌍 RAC</button>
-                <button class="mobile-tab-btn" data-category="addons">🎭 ADD</button>
-            </nav>
-
-            <!-- Mobile Thumbnail Strip -->
-            <div class="mobile-thumbnail-strip" id="mobileThumbnailStrip">
-                <!-- Thumbnails will be populated by JavaScript -->
+            <div class="modal-footer">
+                <button class="btn-secondary" id="clearProfileBtn">Clear</button>
+                <button class="btn-primary" id="saveProfileBtn">Save Profile</button>
             </div>
-        </main>
+        </div>
+    </div>
+
+    <!-- Gallery Modal -->
+    <div class="modal-overlay hidden" id="galleryModal">
+        <div class="modal-content gallery-modal-content">
+            <div class="modal-header">
+                <h2>📸 Gallery</h2>
+                <button class="modal-close" id="closeGalleryModal">&times;</button>
+            </div>
+            <div class="modal-body gallery-body">
+                <div class="gallery-grid" id="galleryGrid">
+                    <!-- Gallery items will be added by JavaScript -->
+                </div>
+                <div class="gallery-empty" id="galleryEmpty">
+                    <span>📷</span>
+                    <p>No photos or videos yet</p>
+                    <p class="gallery-hint">Tap a filter twice to take a photo</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="clearGalleryBtn">Clear All</button>
+                <button class="btn-primary" id="downloadAllBtn">Download All</button>
+            </div>
+        </div>
     </div>
 
     <!-- Hidden elements for processing -->

@@ -411,6 +411,98 @@ class MorphEngine {
     }
 
     /**
+     * Detect how open the mouth is (0 = closed, 1 = fully open)
+     * Uses the ratio of vertical to horizontal mouth opening
+     */
+    detectMouthOpenness(landmarks) {
+        // Inner lip landmarks for mouth opening detection
+        // Top inner lip: 13 (center top)
+        // Bottom inner lip: 14 (center bottom)
+        // Left corner: 78
+        // Right corner: 308
+
+        const topLip = landmarks[13];
+        const bottomLip = landmarks[14];
+        const leftCorner = landmarks[78];
+        const rightCorner = landmarks[308];
+
+        if (!topLip || !bottomLip || !leftCorner || !rightCorner) return 0;
+
+        // Vertical opening (distance between top and bottom inner lips)
+        const verticalOpening = Math.abs(bottomLip[1] - topLip[1]);
+
+        // Horizontal width of mouth
+        const horizontalWidth = Math.abs(rightCorner[0] - leftCorner[0]);
+
+        if (horizontalWidth < 1) return 0;
+
+        // Ratio of vertical to horizontal (higher = more open)
+        const ratio = verticalOpening / horizontalWidth;
+
+        // Normalize: typically ratio < 0.1 is closed, > 0.3 is wide open
+        // Map to 0-1 range with some threshold
+        const openness = Math.max(0, Math.min(1, (ratio - 0.08) / 0.25));
+
+        return openness;
+    }
+
+    /**
+     * Create a mask for the mouth interior region
+     * This mask is white inside the mouth opening (where teeth would show)
+     */
+    createMouthInteriorMask(landmarks, width, height, openness) {
+        if (openness < 0.15) return null; // Mouth is essentially closed
+
+        const maskCanvas = document.createElement('canvas');
+        maskCanvas.width = width;
+        maskCanvas.height = height;
+        const maskCtx = maskCanvas.getContext('2d');
+
+        // Fill with black (no mouth)
+        maskCtx.fillStyle = 'black';
+        maskCtx.fillRect(0, 0, width, height);
+
+        // Inner lip landmarks (forming the mouth opening)
+        // These landmarks form the inner contour of the lips
+        const innerLipIndices = [
+            78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308,
+            324, 318, 402, 317, 14, 87, 178, 88, 95
+        ];
+
+        const innerLipPoints = innerLipIndices
+            .map(i => landmarks[i])
+            .filter(p => p && p[0] !== undefined);
+
+        if (innerLipPoints.length < 10) return null;
+
+        // Draw the mouth interior polygon
+        maskCtx.fillStyle = 'white';
+        maskCtx.beginPath();
+        maskCtx.moveTo(innerLipPoints[0][0], innerLipPoints[0][1]);
+        for (let i = 1; i < innerLipPoints.length; i++) {
+            maskCtx.lineTo(innerLipPoints[i][0], innerLipPoints[i][1]);
+        }
+        maskCtx.closePath();
+        maskCtx.fill();
+
+        // Apply slight blur for smooth edges
+        maskCtx.filter = 'blur(3px)';
+        maskCtx.drawImage(maskCanvas, 0, 0);
+        maskCtx.filter = 'none';
+
+        // Scale mask by openness (more open = stronger mask)
+        const maskData = maskCtx.getImageData(0, 0, width, height);
+        const scaleFactor = Math.min(1, openness * 1.5); // Boost effect slightly
+
+        for (let i = 0; i < maskData.data.length; i += 4) {
+            maskData.data[i] = Math.round(maskData.data[i] * scaleFactor);
+        }
+
+        return maskData;
+    }
+
+
+    /**
      * Apply color correction to match skin tones
      */
     colorCorrect(srcData, targetData, mask, width, height) {
@@ -579,6 +671,10 @@ class MorphEngine {
                 return;
             }
 
+            // Detect mouth openness and create mouth interior mask
+            const mouthOpenness = this.detectMouthOpenness(srcLandmarks);
+            const mouthMask = this.createMouthInteriorMask(srcLandmarks, width, height, mouthOpenness);
+
             // Apply color correction to warped data to match source skin tones
             const correctedWarpedData = this.colorCorrect(srcImageData, warpedData, mask, width, height);
 
@@ -600,15 +696,31 @@ class MorphEngine {
                     blendFactor = maskValue * alpha;
                 }
 
+                // Check if this pixel is inside the mouth opening (for teeth preservation)
+                let mouthFactor = 0;
+                if (mouthMask && !isAnimal) {
+                    mouthFactor = mouthMask.data[i] / 255;
+                }
+
                 // Only blend if we have valid warped data (alpha > 0)
                 const hasWarpedPixel = warpedData.data[i + 3] > 0;
 
                 for (let ch = 0; ch < 3; ch++) {
                     if (hasWarpedPixel && blendFactor > 0.01) {
-                        outputData.data[i + ch] = Math.round(
-                            srcImageData.data[i + ch] * (1 - blendFactor) +
-                            correctedWarpedData.data[i + ch] * blendFactor
-                        );
+                        // Calculate the morphed pixel
+                        const morphedPixel = srcImageData.data[i + ch] * (1 - blendFactor) +
+                            correctedWarpedData.data[i + ch] * blendFactor;
+
+                        // If mouth is open and this is inside the mouth, blend back to source (show teeth)
+                        if (mouthFactor > 0.1) {
+                            // Inside mouth opening: blend back towards source to show teeth
+                            outputData.data[i + ch] = Math.round(
+                                morphedPixel * (1 - mouthFactor) +
+                                srcImageData.data[i + ch] * mouthFactor
+                            );
+                        } else {
+                            outputData.data[i + ch] = Math.round(morphedPixel);
+                        }
                     } else {
                         // Keep source pixel if no warped data or very low blend
                         outputData.data[i + ch] = srcImageData.data[i + ch];
