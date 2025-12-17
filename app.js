@@ -741,38 +741,77 @@ class FaceMorphApp {
     startRecording(index) {
         if (this.state.isRecording) return;
 
+        // Check if MediaRecorder is available
+        if (typeof MediaRecorder === 'undefined') {
+            this.showStatus('Recording not supported on this device', true);
+            return;
+        }
+
         try {
             const stream = this.outputCanvas.captureStream(30);
             if (this.stream) {
                 this.stream.getAudioTracks().forEach(t => stream.addTrack(t));
             }
 
-            // Detect supported MIME type (iOS doesn't support WebM)
-            let mimeType = '';
+            // Detect supported MIME type - iOS Safari needs specific H.264/AAC codecs
+            let mimeType = null;
             const mimeTypes = [
+                // Safari/iOS specific (must be first for iOS)
+                'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+                'video/mp4;codecs=h264,aac',
                 'video/mp4',
+                // Chrome/Firefox
+                'video/webm;codecs=vp9,opus',
                 'video/webm;codecs=vp9',
+                'video/webm;codecs=vp8,opus',
                 'video/webm;codecs=vp8',
-                'video/webm',
-                ''  // Empty string = browser default
+                'video/webm'
             ];
 
             for (const type of mimeTypes) {
-                if (type === '' || MediaRecorder.isTypeSupported(type)) {
-                    mimeType = type;
-                    break;
+                try {
+                    if (MediaRecorder.isTypeSupported(type)) {
+                        mimeType = type;
+                        console.log('[Recording] Using MIME type:', type);
+                        break;
+                    }
+                } catch (e) {
+                    // isTypeSupported might throw on some browsers
+                    continue;
                 }
             }
 
             // Store the mime type for saving later
-            this.recordingMimeType = mimeType || 'video/webm';
+            this.recordingMimeType = mimeType || 'video/mp4';
+            const ext = (mimeType && mimeType.includes('webm')) ? 'webm' : 'mp4';
+            this.recordingExt = ext;
 
-            const options = mimeType ? { mimeType } : {};
-            this.mediaRecorder = new MediaRecorder(stream, options);
+            // Create MediaRecorder with or without specific MIME type
+            let options = {};
+            if (mimeType) {
+                options.mimeType = mimeType;
+            }
+
+            try {
+                this.mediaRecorder = new MediaRecorder(stream, options);
+            } catch (e) {
+                // If that fails, try without specifying mimeType
+                console.log('[Recording] Falling back to default codec');
+                this.mediaRecorder = new MediaRecorder(stream);
+                this.recordingMimeType = 'video/mp4';
+                this.recordingExt = 'mp4';
+            }
+
             this.recordedChunks = [];
 
             this.mediaRecorder.ondataavailable = (e) => {
                 if (e.data.size > 0) this.recordedChunks.push(e.data);
+            };
+
+            this.mediaRecorder.onerror = (e) => {
+                console.error('[Recording] MediaRecorder error:', e);
+                this.showStatus('Recording error', true);
+                this.state.isRecording = false;
             };
 
             this.mediaRecorder.onstop = () => this.saveRecording();
@@ -784,7 +823,7 @@ class FaceMorphApp {
             this.showStatus('Recording...', false);
         } catch (e) {
             console.error('[Recording] Error:', e);
-            this.showStatus('Recording not supported', true);
+            this.showStatus('Video recording not available', true);
         }
     }
 
@@ -797,12 +836,12 @@ class FaceMorphApp {
 
     saveRecording() {
         if (this.recordedChunks.length === 0) return;
-        const mimeType = this.recordingMimeType || 'video/webm';
+        const mimeType = this.recordingMimeType || 'video/mp4';
         const blob = new Blob(this.recordedChunks, { type: mimeType });
         const reader = new FileReader();
         reader.onload = () => {
-            // Store the extension for download
-            const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+            // Use the stored extension
+            const ext = this.recordingExt || (mimeType.includes('webm') ? 'webm' : 'mp4');
             this.addToGallery(reader.result, 'video', ext);
         };
         reader.readAsDataURL(blob);
