@@ -291,8 +291,16 @@ class FaceMorphApp {
                 video.src = item.data;
                 video.muted = true;
                 video.loop = true;
+                video.playsInline = true;  // Better mobile support
                 video.addEventListener('mouseenter', () => video.play());
                 video.addEventListener('mouseleave', () => video.pause());
+                video.addEventListener('touchstart', () => video.play());
+                video.addEventListener('touchend', () => video.pause());
+                // Handle video load errors
+                video.addEventListener('error', () => {
+                    console.error('[Gallery] Failed to load video:', index);
+                    div.innerHTML = '<span style="color:#ff6b6b">⚠️ Video Error</span>';
+                });
                 div.appendChild(video);
 
                 const badge = document.createElement('span');
@@ -303,6 +311,12 @@ class FaceMorphApp {
                 const img = document.createElement('img');
                 img.src = item.data;
                 img.alt = 'Photo';
+                // Handle image load errors
+                img.addEventListener('error', () => {
+                    console.error('[Gallery] Failed to load image:', index);
+                    img.style.display = 'none';
+                    div.innerHTML = '<span style="color:#ff6b6b">⚠️ Image Error</span>';
+                });
                 div.appendChild(img);
             }
 
@@ -329,11 +343,31 @@ class FaceMorphApp {
     }
 
     downloadGalleryItem(item) {
-        const link = document.createElement('a');
-        link.href = item.data;
-        const ext = item.ext || (item.type === 'video' ? 'webm' : 'png');
-        link.download = `facemorph_${item.id}.${ext}`;
-        link.click();
+        try {
+            // Check if data exists
+            if (!item.data || item.data.length < 100) {
+                this.showStatus('Download failed: No data', true);
+                return;
+            }
+
+            const link = document.createElement('a');
+            link.href = item.data;
+            const ext = item.ext || (item.type === 'video' ? 'webm' : 'png');
+            link.download = `facemorph_${item.id}.${ext}`;
+
+            // For iOS/Safari which doesn't support download attribute well
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            this.showStatus('Download started!', false);
+        } catch (e) {
+            console.error('[Gallery] Download error:', e);
+            this.showStatus('Download failed', true);
+        }
     }
 
     clearGallery() {
