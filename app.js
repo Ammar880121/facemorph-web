@@ -1037,16 +1037,42 @@ class FaceMorphApp {
     }
 
     saveRecording() {
-        if (this.recordedChunks.length === 0) return;
-        const mimeType = this.recordingMimeType || 'video/mp4';
-        const blob = new Blob(this.recordedChunks, { type: mimeType });
-        const reader = new FileReader();
-        reader.onload = () => {
-            // Use the stored extension
+        if (this.recordedChunks.length === 0) {
+            this.showStatus('No video data recorded', true);
+            return;
+        }
+
+        try {
+            const mimeType = this.recordingMimeType || 'video/mp4';
+            const blob = new Blob(this.recordedChunks, { type: mimeType });
+
+            // Check if blob is too small (likely failed recording)
+            if (blob.size < 1000) {
+                this.showStatus('Recording failed - no data', true);
+                return;
+            }
+
+            // Videos are too large for localStorage, so download directly
             const ext = this.recordingExt || (mimeType.includes('webm') ? 'webm' : 'mp4');
-            this.addToGallery(reader.result, 'video', ext);
-        };
-        reader.readAsDataURL(blob);
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `facemorph_video_${Date.now()}.${ext}`;
+
+            // For better iOS support
+            link.target = '_blank';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            // Clean up the blob URL after a delay
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+            this.showStatus('Video saved!', false);
+        } catch (e) {
+            console.error('[Recording] Save error:', e);
+            this.showStatus('Failed to save video', true);
+        }
     }
 
     // ============ SCAN ============
