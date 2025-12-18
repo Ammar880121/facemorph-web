@@ -1,20 +1,76 @@
 /**
- * Face Morph Engine - Corrected Version
- * Handles Delaunay triangulation and affine warping for face morphing
- * Based on the working Python implementation
+ * ============================================================================
+ * MORPH ENGINE - Face Morphing Core Algorithm
+ * ============================================================================
+ * 
+ * This engine implements the face morphing algorithm using:
+ * - Delaunay Triangulation (Bowyer-Watson algorithm)
+ * - Affine Transformation (triangle warping)
+ * - Feathered mask blending
+ * 
+ * ALGORITHM OVERVIEW:
+ * -------------------
+ * 1. TRIANGULATION: Divide face into triangles using Delaunay method
+ *    - Uses 468 MediaPipe landmarks as vertices
+ *    - Bowyer-Watson algorithm creates optimal triangle mesh
+ * 
+ * 2. WARPING: For each triangle pair (source ↔ target):
+ *    - Compute affine transform matrix
+ *    - Map each destination pixel to source using inverse transform
+ *    - Sample source color using bilinear interpolation
+ * 
+ * 3. BLENDING: Combine warped face with original:
+ *    - Create face mask from hull landmarks
+ *    - Apply multiple blur passes for smooth feathering
+ *    - Blend using: output = src*(1-mask*α) + warped*(mask*α)
+ * 
+ * KEY CONCEPTS:
+ * -------------
+ * - Hull Indices: 36 landmarks forming face boundary (contour)
+ * - Affine Transform: 2x3 matrix that preserves lines & parallelism
+ * - Circumcircle: Circle passing through all 3 triangle vertices
+ * - Barycentric Coords: Way to express point position within triangle
+ * 
+ * CONVERTED FROM PYTHON:
+ * ----------------------
+ * Python version used cv2.Subdiv2D for triangulation.
+ * Web version implements Bowyer-Watson algorithm manually.
+ * 
+ * @see https://en.wikipedia.org/wiki/Bowyer%E2%80%93Watson_algorithm
+ * @see https://en.wikipedia.org/wiki/Delaunay_triangulation
  */
 
 class MorphEngine {
     constructor() {
-        // Hull indices for face boundary (same as Python version)
+        /**
+         * HULL INDICES - Face Boundary Landmarks
+         * These 36 landmark indices form the convex hull (outline) of the face.
+         * Used to create the face mask for blending the morphed result.
+         * 
+         * Visual representation (approximate positions):
+         *     10 (forehead top)
+         *    /              \
+         *  109               338 (temples)
+         *   |                 |
+         *   |    (face)       |
+         *   |                 |
+         *  172               389 (cheeks)
+         *    \              /
+         *      152 (chin)
+         */
         this.hullIndices = [
             10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288,
             397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136,
             172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109
         ];
 
-        // Key landmark indices to use for triangulation (reduced set for stability)
-        // Using major face landmarks for more stable triangulation
+        /**
+         * KEY LANDMARK INDICES - Points used for triangulation
+         * A subset of all 468 MediaPipe landmarks selected for:
+         * - Dense coverage of facial features (eyes, nose, mouth)
+         * - Stable triangulation with minimal artifacts
+         * - Complete face coverage for seamless morphing
+         */
         this.keyLandmarkIndices = this.getKeyLandmarkIndices();
     }
 
@@ -126,74 +182,166 @@ class MorphEngine {
     }
 
     /**
-     * Bowyer-Watson algorithm for Delaunay triangulation
+     * ========================================================================
+     * BOWYER-WATSON ALGORITHM - Delaunay Triangulation
+     * ========================================================================
+     * 
+     * This algorithm creates an optimal triangulation of points where:
+     * - No point lies inside any triangle's circumcircle
+     * - Triangles are as "fat" as possible (no skinny triangles)
+     * 
+     * TIME COMPLEXITY: O(n²) where n = number of points
+     * 
+     * @param {number[][]} points - Array of [x, y] coordinates
+     * @param {number} width - Image width (for super-triangle sizing)
+     * @param {number} height - Image height (for super-triangle sizing)
+     * @returns {number[][]} Array of triangles, each as [index1, index2, index3]
      */
     bowyerWatson(points, width, height) {
         const triangles = [];
 
-        // Create super-triangle that contains all points
-        const margin = Math.max(width, height) * 10;
+        // ====================================================================
+        // STEP 1: CREATE SUPER-TRIANGLE
+        // ====================================================================
+        // The super-triangle is a giant triangle that contains ALL points.
+        // We need this as a starting triangulation to work with.
+        // It will be removed at the end.
+        //
+        // Visual:
+        //            S1 (top-left, far outside image)
+        //           /  \
+        //          /    \
+        //         /  ALL \
+        //        / POINTS \
+        //       /  HERE    \
+        //      S2__________S3  (corners far outside image)
+        //
+        const margin = Math.max(width, height) * 10;  // Make it 10x larger than image
         const superTri = [
-            [-margin, -margin],
-            [width + margin * 2, -margin],
-            [width / 2, height + margin * 2]
+            [-margin, -margin],                    // S1: Top-left corner
+            [width + margin * 2, -margin],         // S2: Top-right corner
+            [width / 2, height + margin * 2]       // S3: Bottom-center
         ];
 
-        // Add super-triangle vertices to points array
+        // Combine real points with super-triangle vertices
+        // Super-triangle vertices are at indices n, n+1, n+2
         const allPoints = [...points, ...superTri];
-        const n = points.length;
+        const n = points.length;  // Number of real face points
 
-        // Start with super-triangle
+        // ====================================================================
+        // STEP 2: INITIALIZE WITH SUPER-TRIANGLE
+        // ====================================================================
+        // Start with just the super-triangle (using indices n, n+1, n+2)
         let triList = [[n, n + 1, n + 2]];
 
-        // Add each point one at a time
+        // ====================================================================
+        // STEP 3: ADD EACH POINT ONE BY ONE
+        // ====================================================================
+        // For each new point, we:
+        // 1. Find triangles whose circumcircle contains the point (these violate Delaunay)
+        // 2. Remove those "bad" triangles, creating a hole
+        // 3. Fill the hole by connecting the new point to all hole edges
+        //
         for (let i = 0; i < n; i++) {
-            const p = points[i];
-            const badTriangles = [];
+            const p = points[i];  // Current point to insert
+            const badTriangles = []; // Triangles that violate Delaunay after adding p
 
-            // Find all triangles whose circumcircle contains the point
+            // ----------------------------------------------------------------
+            // STEP 3a: FIND BAD TRIANGLES
+            // ----------------------------------------------------------------
+            // A triangle is "bad" if the new point lies inside its circumcircle.
+            // The circumcircle is the unique circle passing through all 3 vertices.
+            //
+            // Visual of circumcircle test:
+            //       A
+            //      /|\
+            //     / | \     ● = circumcircle
+            //    /  |  \    
+            //   B---+---C   If P is inside this circle,
+            //       ●       triangle ABC is "bad"
+            //       P
+            //
             for (const tri of triList) {
                 if (this.inCircumcircle(p, allPoints[tri[0]], allPoints[tri[1]], allPoints[tri[2]])) {
                     badTriangles.push(tri);
                 }
             }
 
-            // Find the boundary of the polygonal hole
-            const polygon = [];
+            // ----------------------------------------------------------------
+            // STEP 3b: FIND THE POLYGONAL HOLE BOUNDARY
+            // ----------------------------------------------------------------
+            // When we remove bad triangles, we get a "hole" in the mesh.
+            // We need to find the edges that form the boundary of this hole.
+            // An edge is on the boundary if it's NOT shared by two bad triangles.
+            //
+            // Visual:
+            //     Bad triangles removed:     Boundary edges:
+            //        A───B───C                 A───B───C
+            //        |\  |  /|                 |       |
+            //        | \ | / |     →           |       |
+            //        |  \|/  |                 |  hole |
+            //        D───X───E                 D───────E
+            //
+            const polygon = [];  // Will hold boundary edges
             for (const tri of badTriangles) {
+                // Get all 3 edges of this triangle
                 const edges = [
-                    [tri[0], tri[1]],
-                    [tri[1], tri[2]],
-                    [tri[2], tri[0]]
+                    [tri[0], tri[1]],  // Edge 1: vertex 0 to vertex 1
+                    [tri[1], tri[2]],  // Edge 2: vertex 1 to vertex 2
+                    [tri[2], tri[0]]   // Edge 3: vertex 2 to vertex 0
                 ];
 
+                // Check each edge: is it shared with another bad triangle?
                 for (const edge of edges) {
                     let shared = false;
                     for (const other of badTriangles) {
-                        if (tri === other) continue;
+                        if (tri === other) continue;  // Don't compare with self
                         if (this.hasEdge(other, edge)) {
-                            shared = true;
+                            shared = true;  // This edge is internal (shared)
                             break;
                         }
                     }
                     if (!shared) {
+                        // This edge is on the boundary of the hole
                         polygon.push(edge);
                     }
                 }
             }
 
-            // Remove bad triangles
+            // ----------------------------------------------------------------
+            // STEP 3c: REMOVE BAD TRIANGLES
+            // ----------------------------------------------------------------
             triList = triList.filter(tri => !badTriangles.includes(tri));
 
-            // Re-triangulate the hole
+            // ----------------------------------------------------------------
+            // STEP 3d: RE-TRIANGULATE THE HOLE
+            // ----------------------------------------------------------------
+            // Connect the new point P to every edge of the hole boundary.
+            // This creates new triangles that satisfy Delaunay property.
+            //
+            // Visual:
+            //     Hole boundary:           After connecting P:
+            //        A───B                     A───B
+            //        |   |                     |\ /|
+            //        |   |         →           | P |
+            //        |   |                     |/ \|
+            //        D───E                     D───E
+            //
             for (const edge of polygon) {
+                // Create new triangle: edge[0] → edge[1] → new point i
                 triList.push([edge[0], edge[1], i]);
             }
         }
 
-        // Remove triangles that use super-triangle vertices
+        // ====================================================================
+        // STEP 4: REMOVE SUPER-TRIANGLE
+        // ====================================================================
+        // The super-triangle was just scaffolding. Remove any triangle that
+        // uses super-triangle vertices (indices >= n).
+        //
         const result = [];
         for (const tri of triList) {
+            // Only keep triangles where ALL vertices are real face points
             if (tri[0] < n && tri[1] < n && tri[2] < n) {
                 result.push(tri);
             }
@@ -203,7 +351,14 @@ class MorphEngine {
     }
 
     /**
-     * Check if triangle contains edge
+     * ========================================================================
+     * CHECK IF TRIANGLE CONTAINS EDGE
+     * ========================================================================
+     * Simple helper to check if a triangle has a specific edge.
+     * 
+     * @param {number[]} tri - Triangle as [vertexIndex1, vertexIndex2, vertexIndex3]
+     * @param {number[]} edge - Edge as [vertexIndex1, vertexIndex2]
+     * @returns {boolean} True if the triangle contains this edge
      */
     hasEdge(tri, edge) {
         const [a, b] = edge;
@@ -211,9 +366,36 @@ class MorphEngine {
     }
 
     /**
-     * Check if point p is inside the circumcircle of triangle abc
+     * ========================================================================
+     * CIRCUMCIRCLE TEST
+     * ========================================================================
+     * Checks if point P lies inside the circumcircle of triangle ABC.
+     * 
+     * WHAT IS A CIRCUMCIRCLE?
+     * The circumcircle is the unique circle that passes through all 3 vertices
+     * of a triangle. Every triangle has exactly one circumcircle.
+     * 
+     * Visual:
+     *            A
+     *           /|\
+     *          / | \
+     *         /  |  \    ← The circumcircle passes through A, B, and C
+     *        B---+---C
+     *            ●
+     *            P      ← Is P inside this circle?
+     * 
+     * MATH: Uses the determinant formula for circumcircle test.
+     * The sign of the determinant tells us if P is inside (positive),
+     * on the circle (zero), or outside (negative).
+     * 
+     * @param {number[]} p - Point to test [x, y]
+     * @param {number[]} a - First vertex of triangle [x, y]
+     * @param {number[]} b - Second vertex of triangle [x, y]
+     * @param {number[]} c - Third vertex of triangle [x, y]
+     * @returns {boolean} True if point p is inside the circumcircle
      */
     inCircumcircle(p, a, b, c) {
+        // Translate points so P is at origin (simplifies the math)
         const ax = a[0] - p[0];
         const ay = a[1] - p[1];
         const bx = b[0] - p[0];
@@ -221,117 +403,254 @@ class MorphEngine {
         const cx = c[0] - p[0];
         const cy = c[1] - p[1];
 
+        // Compute the determinant using the formula:
+        // | ax  ay  ax²+ay² |
+        // | bx  by  bx²+by² |  > 0  means P is inside
+        // | cx  cy  cx²+cy² |
         const det = (ax * ax + ay * ay) * (bx * cy - cx * by) -
             (bx * bx + by * by) * (ax * cy - cx * ay) +
             (cx * cx + cy * cy) * (ax * by - bx * ay);
 
-        return det > 0;
+        return det > 0;  // Positive = inside circumcircle
     }
 
     /**
-     * Compute affine transformation matrix from srcTri to dstTri
+     * ========================================================================
+     * AFFINE TRANSFORMATION MATRIX
+     * ========================================================================
+     * Computes the 2D affine transformation matrix that maps source triangle
+     * to destination triangle.
+     * 
+     * WHAT IS AN AFFINE TRANSFORM?
+     * An affine transform preserves:
+     * - Straight lines (lines remain lines)
+     * - Parallelism (parallel lines stay parallel)
+     * - Ratios of distances along lines
+     * 
+     * It can represent: rotation, scaling, shearing, translation (and combinations)
+     * 
+     * THE MATRIX:
+     * [a  b  c]   [x]   [x']
+     * [d  e  f] × [y] = [y']
+     *             [1]
+     * 
+     * Where:
+     * - x' = a*x + b*y + c  (new x coordinate)
+     * - y' = d*x + e*y + f  (new y coordinate)
+     * 
+     * We solve for a,b,c,d,e,f by setting up equations:
+     * - srcTri[0] → dstTri[0]
+     * - srcTri[1] → dstTri[1]
+     * - srcTri[2] → dstTri[2]
+     * 
+     * @param {number[][]} srcTri - Source triangle [[x0,y0], [x1,y1], [x2,y2]]
+     * @param {number[][]} dstTri - Destination triangle [[u0,v0], [u1,v1], [u2,v2]]
+     * @returns {number[]|null} [a, b, c, d, e, f] or null if degenerate triangle
      */
     computeAffineTransform(srcTri, dstTri) {
+        // Extract source triangle vertices
         const [[x0, y0], [x1, y1], [x2, y2]] = srcTri;
+        // Extract destination triangle vertices
         const [[u0, v0], [u1, v1], [u2, v2]] = dstTri;
 
         // Compute the determinant of the source triangle
+        // This is 2x the signed area of the triangle
+        // If zero, the triangle is degenerate (all points collinear)
         const det = (x0 - x2) * (y1 - y2) - (x1 - x2) * (y0 - y2);
-        if (Math.abs(det) < 1e-10) return null;
+        if (Math.abs(det) < 1e-10) return null;  // Degenerate triangle
 
         const invDet = 1.0 / det;
 
-        // Compute affine matrix coefficients
+        // Solve for affine matrix coefficients using Cramer's rule
+        // These formulas come from solving the system of linear equations
         const a = ((u0 - u2) * (y1 - y2) - (u1 - u2) * (y0 - y2)) * invDet;
         const b = ((u1 - u2) * (x0 - x2) - (u0 - u2) * (x1 - x2)) * invDet;
-        const c = u2 - a * x2 - b * y2;
+        const c = u2 - a * x2 - b * y2;  // Translation component for x
 
         const d = ((v0 - v2) * (y1 - y2) - (v1 - v2) * (y0 - y2)) * invDet;
         const e = ((v1 - v2) * (x0 - x2) - (v0 - v2) * (x1 - x2)) * invDet;
-        const f = v2 - d * x2 - e * y2;
+        const f = v2 - d * x2 - e * y2;  // Translation component for y
 
         return [a, b, c, d, e, f];
     }
 
     /**
-     * Check if point is inside triangle using barycentric coordinates
+     * ========================================================================
+     * POINT IN TRIANGLE TEST (Barycentric Coordinates)
+     * ========================================================================
+     * Checks if a point (px, py) is inside a triangle using barycentric coordinates.
+     * 
+     * WHAT ARE BARYCENTRIC COORDINATES?
+     * Any point P can be expressed as a weighted sum of triangle vertices:
+     * P = u*V0 + v*V1 + w*V2, where u + v + w = 1
+     * 
+     * If 0 ≤ u,v,w ≤ 1, the point is inside the triangle.
+     * 
+     * Visual:
+     *        V2
+     *        /\
+     *       /  \
+     *      / P  \    P is inside if u,v,w are all between 0 and 1
+     *     /      \
+     *    V0──────V1
+     * 
+     * @param {number} px - Point x coordinate
+     * @param {number} py - Point y coordinate
+     * @param {number[][]} tri - Triangle [[x0,y0], [x1,y1], [x2,y2]]
+     * @returns {boolean} True if point is inside (or on edge of) triangle
      */
     isPointInTriangle(px, py, tri) {
         const [[x0, y0], [x1, y1], [x2, y2]] = tri;
 
-        const v0x = x2 - x0;
+        // Compute vectors from V0 to other vertices and to point P
+        const v0x = x2 - x0;  // Vector from V0 to V2
         const v0y = y2 - y0;
-        const v1x = x1 - x0;
+        const v1x = x1 - x0;  // Vector from V0 to V1
         const v1y = y1 - y0;
-        const v2x = px - x0;
+        const v2x = px - x0;  // Vector from V0 to P
         const v2y = py - y0;
 
-        const dot00 = v0x * v0x + v0y * v0y;
-        const dot01 = v0x * v1x + v0y * v1y;
-        const dot02 = v0x * v2x + v0y * v2y;
-        const dot11 = v1x * v1x + v1y * v1y;
-        const dot12 = v1x * v2x + v1y * v2y;
+        // Compute dot products for the barycentric formula
+        const dot00 = v0x * v0x + v0y * v0y;  // v0 · v0
+        const dot01 = v0x * v1x + v0y * v1y;  // v0 · v1
+        const dot02 = v0x * v2x + v0y * v2y;  // v0 · v2
+        const dot11 = v1x * v1x + v1y * v1y;  // v1 · v1
+        const dot12 = v1x * v2x + v1y * v2y;  // v1 · v2
 
+        // Compute barycentric coordinates
         const denom = dot00 * dot11 - dot01 * dot01;
-        if (Math.abs(denom) < 1e-10) return false;
+        if (Math.abs(denom) < 1e-10) return false;  // Degenerate triangle
 
         const invDenom = 1 / denom;
         const u = (dot11 * dot02 - dot01 * dot12) * invDenom;
         const v = (dot00 * dot12 - dot01 * dot02) * invDenom;
 
+        // Check if point is in triangle (with small tolerance for edge cases)
+        // u >= 0, v >= 0, and u + v <= 1
         return (u >= -0.001) && (v >= -0.001) && (u + v <= 1.001);
     }
 
     /**
-     * Warp a single triangle from source to destination
+     * ========================================================================
+     * WARP TRIANGLE - Core of Face Morphing
+     * ========================================================================
+     * Warps pixels from a source triangle to a destination triangle.
+     * 
+     * HOW IT WORKS:
+     * 1. For each pixel in the DESTINATION triangle
+     * 2. Use INVERSE transform to find where it came from in SOURCE
+     * 3. Sample the source color (using bilinear interpolation)
+     * 4. Write to destination
+     * 
+     * WHY INVERSE TRANSFORM?
+     * We iterate over destination pixels (not source) because:
+     * - Every destination pixel gets exactly one value (no gaps)
+     * - We know exactly which pixels to fill
+     * 
+     * Visual:
+     *     SOURCE                    DESTINATION
+     *        A                          A'
+     *       /\          warp           /\
+     *      /  \        ----→          /  \
+     *     /    \                     /    \
+     *    B──────C                   B'─────C'
+     * 
+     * For each pixel P' in dest triangle:
+     *   P = inverseTransform(P')  ← Find source location
+     *   color = sample(source, P) ← Get color from source
+     *   dest[P'] = color          ← Write to destination
+     * 
+     * @param {ImageData} srcData - Source image data
+     * @param {ImageData} dstData - Destination image data (will be modified)
+     * @param {number[][]} srcTri - Source triangle [[x0,y0], [x1,y1], [x2,y2]]
+     * @param {number[][]} dstTri - Destination triangle
      */
     warpTriangle(srcData, dstData, srcTri, dstTri) {
-        // Get bounding box of destination triangle
+        // ====================================================================
+        // STEP 1: GET BOUNDING BOX OF DESTINATION TRIANGLE
+        // ====================================================================
+        // Instead of checking every pixel in the image, we only check pixels
+        // within the bounding box of the destination triangle.
+        //
+        // Visual:
+        //     ┌─────────────┐
+        //     │    /\       │  ← Bounding box
+        //     │   /  \      │
+        //     │  /____\     │
+        //     └─────────────┘
+        //
         const minX = Math.max(0, Math.floor(Math.min(dstTri[0][0], dstTri[1][0], dstTri[2][0])));
         const maxX = Math.min(dstData.width - 1, Math.ceil(Math.max(dstTri[0][0], dstTri[1][0], dstTri[2][0])));
         const minY = Math.max(0, Math.floor(Math.min(dstTri[0][1], dstTri[1][1], dstTri[2][1])));
         const maxY = Math.min(dstData.height - 1, Math.ceil(Math.max(dstTri[0][1], dstTri[1][1], dstTri[2][1])));
 
-        if (minX >= maxX || minY >= maxY) return;
+        if (minX >= maxX || minY >= maxY) return;  // Triangle is outside image or degenerate
 
-        // Compute inverse affine transform (from dst to src)
+        // ====================================================================
+        // STEP 2: COMPUTE INVERSE AFFINE TRANSFORM
+        // ====================================================================
+        // We need the transform that goes from DESTINATION → SOURCE
+        // So we can ask: "For this destination pixel, where did it come from?"
+        //
         const matrix = this.computeAffineTransform(dstTri, srcTri);
-        if (!matrix) return;
+        if (!matrix) return;  // Degenerate triangle
 
-        const [a, b, c, d, e, f] = matrix;
+        const [a, b, c, d, e, f] = matrix;  // Transform coefficients
         const srcWidth = srcData.width;
         const srcHeight = srcData.height;
         const dstWidth = dstData.width;
 
-        // Iterate over destination bounding box
+        // ====================================================================
+        // STEP 3: ITERATE OVER DESTINATION PIXELS
+        // ====================================================================
         for (let y = minY; y <= maxY; y++) {
             for (let x = minX; x <= maxX; x++) {
-                // Check if point is inside destination triangle
+                // Check if this pixel is actually inside the destination triangle
+                // (bounding box includes pixels outside the triangle)
                 if (!this.isPointInTriangle(x, y, dstTri)) continue;
 
-                // Apply inverse transform to get source coordinates
+                // ============================================================
+                // STEP 4: APPLY INVERSE TRANSFORM
+                // ============================================================
+                // x' = a*x + b*y + c
+                // y' = d*x + e*y + f
                 const srcX = a * x + b * y + c;
                 const srcY = d * x + e * y + f;
 
-                // Check bounds
+                // Check if source coordinates are within bounds
                 if (srcX < 0 || srcX >= srcWidth - 1 || srcY < 0 || srcY >= srcHeight - 1) continue;
 
-                // Bilinear interpolation
-                const x0 = Math.floor(srcX);
-                const y0 = Math.floor(srcY);
-                const x1 = Math.min(x0 + 1, srcWidth - 1);
-                const y1 = Math.min(y0 + 1, srcHeight - 1);
-                const fx = srcX - x0;
-                const fy = srcY - y0;
+                // ============================================================
+                // STEP 5: BILINEAR INTERPOLATION
+                // ============================================================
+                // The source coordinates are usually not exact integers.
+                // We interpolate between the 4 nearest pixels for smooth results.
+                //
+                // Visual:
+                //     (x0,y0)────(x1,y0)
+                //        │    P    │      P = source point (may be between pixels)
+                //        │    ●    │      
+                //     (x0,y1)────(x1,y1)
+                //
+                const x0 = Math.floor(srcX);    // Left pixel
+                const y0 = Math.floor(srcY);    // Top pixel
+                const x1 = Math.min(x0 + 1, srcWidth - 1);   // Right pixel
+                const y1 = Math.min(y0 + 1, srcHeight - 1);  // Bottom pixel
+                const fx = srcX - x0;  // Fractional x (0 to 1)
+                const fy = srcY - y0;  // Fractional y (0 to 1)
 
-                const dstIdx = (y * dstWidth + x) * 4;
+                const dstIdx = (y * dstWidth + x) * 4;  // Destination pixel index (RGBA = 4 bytes)
 
+                // Interpolate each color channel (R, G, B)
                 for (let ch = 0; ch < 3; ch++) {
-                    const v00 = srcData.data[(y0 * srcWidth + x0) * 4 + ch];
-                    const v10 = srcData.data[(y0 * srcWidth + x1) * 4 + ch];
-                    const v01 = srcData.data[(y1 * srcWidth + x0) * 4 + ch];
-                    const v11 = srcData.data[(y1 * srcWidth + x1) * 4 + ch];
+                    // Get the 4 neighboring pixel values
+                    const v00 = srcData.data[(y0 * srcWidth + x0) * 4 + ch];  // Top-left
+                    const v10 = srcData.data[(y0 * srcWidth + x1) * 4 + ch];  // Top-right
+                    const v01 = srcData.data[(y1 * srcWidth + x0) * 4 + ch];  // Bottom-left
+                    const v11 = srcData.data[(y1 * srcWidth + x1) * 4 + ch];  // Bottom-right
 
+                    // Bilinear interpolation formula:
+                    // value = v00*(1-fx)*(1-fy) + v10*fx*(1-fy) + v01*(1-fx)*fy + v11*fx*fy
                     const value = v00 * (1 - fx) * (1 - fy) +
                         v10 * fx * (1 - fy) +
                         v01 * (1 - fx) * fy +
@@ -339,7 +658,7 @@ class MorphEngine {
 
                     dstData.data[dstIdx + ch] = Math.round(value);
                 }
-                dstData.data[dstIdx + 3] = 255;
+                dstData.data[dstIdx + 3] = 255;  // Alpha = fully opaque
             }
         }
     }
