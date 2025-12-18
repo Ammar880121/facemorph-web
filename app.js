@@ -240,13 +240,20 @@ class FaceMorphApp {
 
     saveGallery() {
         try {
-            localStorage.setItem('facemorphGallery', JSON.stringify(this.gallery));
+            // Only save photos to localStorage (videos with blob URLs are session-only)
+            const photosOnly = this.gallery.filter(item =>
+                item.type === 'photo' || !item.data.startsWith('blob:')
+            );
+            localStorage.setItem('facemorphGallery', JSON.stringify(photosOnly));
             this.updateGalleryBadge();
         } catch (e) {
             // Storage might be full, remove oldest items
             if (this.gallery.length > 10) {
                 this.gallery = this.gallery.slice(-10);
-                localStorage.setItem('facemorphGallery', JSON.stringify(this.gallery));
+                try {
+                    const photosOnly = this.gallery.filter(item => item.type === 'photo');
+                    localStorage.setItem('facemorphGallery', JSON.stringify(photosOnly));
+                } catch (e2) { /* ignore */ }
             }
         }
     }
@@ -1059,26 +1066,18 @@ class FaceMorphApp {
                 return;
             }
 
-            // Videos are too large for localStorage, so download directly
+            // Create a blob URL for the video (stays in memory during session)
             const ext = this.recordingExt || (mimeType.includes('webm') ? 'webm' : 'mp4');
-            const url = URL.createObjectURL(blob);
-            console.log('[Recording] Blob URL created:', url);
+            const blobUrl = URL.createObjectURL(blob);
 
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `facemorph_video_${Date.now()}.${ext}`;
+            // Store blob reference so it doesn't get garbage collected
+            if (!this.videoBlobs) this.videoBlobs = [];
+            this.videoBlobs.push({ url: blobUrl, blob: blob });
 
-            // For better mobile support
-            link.target = '_blank';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            // Add to gallery with blob URL (not data URL to avoid localStorage limits)
+            this.addToGallery(blobUrl, 'video', ext);
 
-            // Clean up the blob URL after a delay
-            setTimeout(() => URL.revokeObjectURL(url), 5000);
-
-            this.showStatus('Video downloaded!', false);
-            console.log('[Recording] Download triggered successfully');
+            console.log('[Recording] Video added to gallery');
         } catch (e) {
             console.error('[Recording] Save error:', e);
             this.showStatus('Failed to save: ' + e.message, true);
