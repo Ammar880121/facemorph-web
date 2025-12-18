@@ -1037,29 +1037,38 @@ class FaceMorphApp {
     }
 
     saveRecording() {
+        console.log('[Recording] saveRecording called, chunks:', this.recordedChunks.length);
+
         if (this.recordedChunks.length === 0) {
             this.showStatus('No video data recorded', true);
+            console.error('[Recording] No chunks recorded');
             return;
         }
 
         try {
             const mimeType = this.recordingMimeType || 'video/mp4';
+            console.log('[Recording] Creating blob with mimeType:', mimeType);
+
             const blob = new Blob(this.recordedChunks, { type: mimeType });
+            console.log('[Recording] Blob created, size:', blob.size);
 
             // Check if blob is too small (likely failed recording)
             if (blob.size < 1000) {
-                this.showStatus('Recording failed - no data', true);
+                this.showStatus('Recording failed - video too small', true);
+                console.error('[Recording] Blob too small:', blob.size);
                 return;
             }
 
             // Videos are too large for localStorage, so download directly
             const ext = this.recordingExt || (mimeType.includes('webm') ? 'webm' : 'mp4');
             const url = URL.createObjectURL(blob);
+            console.log('[Recording] Blob URL created:', url);
+
             const link = document.createElement('a');
             link.href = url;
             link.download = `facemorph_video_${Date.now()}.${ext}`;
 
-            // For better iOS support
+            // For better mobile support
             link.target = '_blank';
             document.body.appendChild(link);
             link.click();
@@ -1068,10 +1077,11 @@ class FaceMorphApp {
             // Clean up the blob URL after a delay
             setTimeout(() => URL.revokeObjectURL(url), 5000);
 
-            this.showStatus('Video saved!', false);
+            this.showStatus('Video downloaded!', false);
+            console.log('[Recording] Download triggered successfully');
         } catch (e) {
             console.error('[Recording] Save error:', e);
-            this.showStatus('Failed to save video', true);
+            this.showStatus('Failed to save: ' + e.message, true);
         }
     }
 
