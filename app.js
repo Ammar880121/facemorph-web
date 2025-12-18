@@ -352,28 +352,32 @@ class FaceMorphApp {
     downloadGalleryItem(item) {
         try {
             // Check if data exists
-            if (!item.data || item.data.length < 100) {
+            if (!item.data) {
                 this.showStatus('Download failed: No data', true);
                 return;
             }
+
+            console.log('[Gallery] Downloading:', item.type, item.data.substring(0, 50));
 
             const link = document.createElement('a');
             link.href = item.data;
             const ext = item.ext || (item.type === 'video' ? 'webm' : 'png');
             link.download = `facemorph_${item.id}.${ext}`;
 
-            // For iOS/Safari which doesn't support download attribute well
-            link.target = '_blank';
-            link.rel = 'noopener noreferrer';
-
+            // For better browser support
+            link.style.display = 'none';
             document.body.appendChild(link);
             link.click();
-            document.body.removeChild(link);
+
+            // Small delay before removing
+            setTimeout(() => {
+                document.body.removeChild(link);
+            }, 100);
 
             this.showStatus('Download started!', false);
         } catch (e) {
             console.error('[Gallery] Download error:', e);
-            this.showStatus('Download failed', true);
+            this.showStatus('Download failed: ' + e.message, true);
         }
     }
 
