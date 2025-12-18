@@ -1,90 +1,175 @@
 /**
- * Face Morph Pro - Enhanced Web Application
- * Real-time face morphing with in-app gallery
+ * ============================================================================
+ * FACE MORPH PRO - Web Application
+ * ============================================================================
+ * 
+ * A real-time face morphing application that transforms your face into
+ * celebrities, animals, historical figures, and different ethnicities.
+ * 
+ * MODELS USED:
+ * ------------
+ * 1. MediaPipe Face Mesh - Detects 468 facial landmarks in real-time
+ *    - Loaded from: https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh
+ *    - Used for: Face detection, landmark extraction, morph positioning
+ * 
+ * 2. Face-API.js - Gender and age detection
+ *    - Loaded from: https://cdn.jsdelivr.net/npm/@vladmandic/face-api
+ *    - Models: tinyFaceDetector, ageGenderNet
+ *    - Used for: Scanning user's gender/age to filter appropriate morphs
+ * 
+ * HOW MORPHING WORKS:
+ * -------------------
+ * 1. Camera captures video frames continuously
+ * 2. MediaPipe detects face and extracts 468 landmarks
+ * 3. Target image landmarks are loaded from pre-computed JSON files
+ * 4. MorphEngine performs Delaunay triangulation on landmarks
+ * 5. Each triangle is affine-warped from target to camera position
+ * 6. A feathered mask blends the warped face onto the camera feed
+ * 
+ * CONVERTED FROM:
+ * ---------------
+ * Originally a Python desktop app using OpenCV and MediaPipe.
+ * Key differences in web version:
+ * - Uses Canvas API instead of OpenCV for image manipulation
+ * - Custom Bowyer-Watson algorithm instead of cv2.Subdiv2D
+ * - Face-API.js instead of Caffe model for gender detection
+ * 
+ * @author Face Morph Pro Team
+ * @version 2.0.0 (Web)
  */
 
 class FaceMorphApp {
+    /**
+     * ========================================================================
+     * CONSTRUCTOR - Initialize the Face Morph Application
+     * ========================================================================
+     * Sets up all DOM references, state, and initializes the app.
+     */
     constructor() {
-        // DOM Elements
-        this.video = document.getElementById('video');
-        this.outputCanvas = document.getElementById('outputCanvas');
-        this.processingCanvas = document.getElementById('processingCanvas');
-        this.filterCarousel = document.getElementById('filterCarousel');
-        this.loadingOverlay = document.getElementById('loadingOverlay');
-        this.noFaceWarning = document.getElementById('noFaceWarning');
-        this.statusOverlay = document.getElementById('statusOverlay');
-        this.statusText = document.getElementById('statusText');
-        this.morphSlider = document.getElementById('morphSlider');
-        this.morphValue = document.getElementById('morphValue');
+        // ====================================================================
+        // DOM ELEMENT REFERENCES
+        // ====================================================================
+        // These are references to HTML elements defined in index.html
+
+        // Video and Canvas elements for camera display
+        this.video = document.getElementById('video');           // Hidden video element for camera feed
+        this.outputCanvas = document.getElementById('outputCanvas'); // Main visible canvas showing morphed result
+        this.processingCanvas = document.getElementById('processingCanvas'); // Hidden canvas for intermediate processing
+
+        // UI Elements
+        this.filterCarousel = document.getElementById('filterCarousel');   // Horizontal scrolling filter thumbnails
+        this.loadingOverlay = document.getElementById('loadingOverlay');   // "Loading..." overlay shown during init
+        this.noFaceWarning = document.getElementById('noFaceWarning');     // Warning shown when no face detected
+        this.statusOverlay = document.getElementById('statusOverlay');     // Toast-style status messages
+        this.statusText = document.getElementById('statusText');           // Text content of status messages
+        this.morphSlider = document.getElementById('morphSlider');         // Slider to control morph intensity (0-100%)
+        this.morphValue = document.getElementById('morphValue');           // Display showing current morph percentage
+
+        // Gender/Age scan display elements
         this.scanResultDisplay = document.getElementById('scanResultDisplay');
         this.scanGender = document.getElementById('scanGender');
         this.scanAge = document.getElementById('scanAge');
         this.scanBadge = document.getElementById('scanBadge');
-        this.effectsPanel = document.getElementById('effectsPanel');
-        this.profileModal = document.getElementById('profileModal');
-        this.galleryModal = document.getElementById('galleryModal');
-        this.galleryGrid = document.getElementById('galleryGrid');
-        this.galleryEmpty = document.getElementById('galleryEmpty');
-        this.galleryBadge = document.getElementById('galleryBadge');
-        this.userNameDisplay = document.getElementById('userName');
 
-        // Canvas contexts
-        this.outputCtx = this.outputCanvas.getContext('2d');
-        this.processingCtx = this.processingCanvas.getContext('2d');
+        // Modal and panel elements
+        this.effectsPanel = document.getElementById('effectsPanel');     // Side panel for color effects
+        this.profileModal = document.getElementById('profileModal');     // User profile modal
+        this.galleryModal = document.getElementById('galleryModal');     // Gallery modal
+        this.galleryGrid = document.getElementById('galleryGrid');       // Grid container for gallery items
+        this.galleryEmpty = document.getElementById('galleryEmpty');     // "No photos yet" message
+        this.galleryBadge = document.getElementById('galleryBadge');     // Badge showing gallery count
+        this.userNameDisplay = document.getElementById('userName');       // Display user's name in header
 
-        // State
+        // ====================================================================
+        // CANVAS CONTEXTS
+        // ====================================================================
+        // 2D rendering contexts for drawing on canvases
+        this.outputCtx = this.outputCanvas.getContext('2d');     // Context for final output
+        this.processingCtx = this.processingCanvas.getContext('2d'); // Context for intermediate processing
+
+        // ====================================================================
+        // APPLICATION STATE
+        // ====================================================================
+        // Centralized state object - tracks all app state in one place
         this.state = {
-            currentCategory: 'celebs',
-            selectedImageIndex: -1,
-            morphAmount: 0,
-            isRecording: false,
-            faceDetected: false,
-            selectedAddon: null,
-            currentEffect: 'none',
-            profile: { name: '', email: '' }
+            currentCategory: 'celebs',    // Currently selected category tab
+            selectedImageIndex: -1,       // Index of selected morph target (-1 = none)
+            morphAmount: 0,               // Morph intensity 0.0 to 1.0
+            isRecording: false,           // True when recording video
+            faceDetected: false,          // True when a face is visible in camera
+            selectedAddon: null,          // Currently selected addon (glasses, hat, etc.)
+            currentEffect: 'none',        // Color effect: 'none', 'bw', or 'purple'
+            profile: { name: '', email: '' }  // User profile data
         };
 
-        // Gallery storage
-        this.gallery = [];
+        // ====================================================================
+        // GALLERY STORAGE
+        // ====================================================================
+        this.gallery = [];  // Array of captured photos/videos (stored in localStorage)
 
-        // Filter interaction state
-        this.filterHoldTimer = null;
-        this.isFilterHolding = false;
-        this.filterDownTime = 0; // Track when filter was pressed
+        // ====================================================================
+        // FILTER INTERACTION STATE
+        // ====================================================================
+        // Tracks touch/click state for the filter carousel
+        // Tap once = select filter, Tap again = take photo, Hold = record video
+        this.filterHoldTimer = null;   // Timer for detecting long press
+        this.isFilterHolding = false;  // True while user is holding down on filter
+        this.filterDownTime = 0;       // Timestamp when user started pressing
 
-        // Camera facing mode
-        this.currentFacingMode = 'user';
+        // ====================================================================
+        // CAMERA STATE
+        // ====================================================================
+        this.currentFacingMode = 'user';  // 'user' = front camera, 'environment' = back camera
 
-        // Categories and assets
-        this.categories = ['animals', 'celebs', 'history', 'races', 'addons'];
-        this.assets = {};
-        this.currentAssets = [];
+        // ====================================================================
+        // MORPH ASSETS
+        // ====================================================================
+        this.categories = ['animals', 'celebs', 'history', 'races', 'addons'];  // Available categories
+        this.assets = {};          // All loaded assets organized by category
+        this.currentAssets = [];   // Assets currently displayed in carousel
 
-        // Target face data
-        this.targetImage = null;
-        this.targetLandmarks = null;
+        // ====================================================================
+        // TARGET FACE DATA (the face to morph INTO)
+        // ====================================================================
+        this.targetImage = null;     // Image element of selected morph target
+        this.targetLandmarks = null; // 468 landmark points for target face (from JSON)
 
-        // Camera landmarks
-        this.cameraLandmarks = null;
+        // ====================================================================
+        // CAMERA FACE DATA (the user's face)
+        // ====================================================================
+        this.cameraLandmarks = null;  // 468 landmark points detected in camera feed
 
-        // Morph engine
+        // ====================================================================
+        // MORPH ENGINE
+        // ====================================================================
+        // The MorphEngine handles all the math: triangulation, warping, blending
         this.morphEngine = new MorphEngine();
 
-        // MediaPipe Face Mesh
+        // ====================================================================
+        // MEDIAPIPE FACE MESH
+        // ====================================================================
+        // Google's face detection library - detects 468 facial landmarks
         this.faceMesh = null;
 
-        // Face-API.js models loaded flag
-        this.faceApiLoaded = false;
+        // ====================================================================
+        // FACE-API.JS (Gender/Age Detection)
+        // ====================================================================
+        this.faceApiLoaded = false;  // True when Face-API models are loaded
 
-        // Recording
-        this.mediaRecorder = null;
-        this.recordedChunks = [];
+        // ====================================================================
+        // VIDEO RECORDING
+        // ====================================================================
+        this.mediaRecorder = null;   // MediaRecorder instance for video capture
+        this.recordedChunks = [];    // Array of video data chunks
 
-        // Target canvas
+        // ====================================================================
+        // TARGET IMAGE CANVAS
+        // ====================================================================
+        // Offscreen canvas used to draw and process the target morph image
         this.targetCanvas = document.createElement('canvas');
         this.targetCtx = this.targetCanvas.getContext('2d');
 
-        // Initialize
+        // Start initialization
         this.init();
     }
 
@@ -413,23 +498,56 @@ class FaceMorphApp {
         }
     }
 
+    /**
+     * ========================================================================
+     * START PROCESSING LOOP
+     * ========================================================================
+     * Begins the main animation loop that processes each video frame.
+     * This runs at ~30-60 FPS using requestAnimationFrame.
+     */
     startProcessing() {
         const processFrame = async () => {
+            // Only process if video has loaded enough data
+            // readyState >= 2 means HAVE_CURRENT_DATA (at least one frame available)
             if (this.video.readyState >= 2) {
+                // Send the current video frame to MediaPipe for face detection
+                // Results come back via the onFaceMeshResults callback
                 await this.faceMesh.send({ image: this.video });
             }
+            // Request next frame (creates smooth 60fps loop)
             requestAnimationFrame(processFrame);
         };
         processFrame();
     }
 
+    /**
+     * ========================================================================
+     * FACE MESH RESULTS CALLBACK
+     * ========================================================================
+     * Called by MediaPipe whenever it finishes processing a frame.
+     * This is the heart of the app - it runs every frame (~30-60 times/second).
+     * 
+     * FLOW:
+     * 1. Draw the video frame to canvas (mirrored for selfie mode)
+     * 2. If face detected: extract landmarks, apply morph or addon
+     * 3. If no face: show warning
+     * 4. Apply any color effects
+     * 
+     * @param {Object} results - MediaPipe results containing multiFaceLandmarks array
+     */
     onFaceMeshResults(results) {
         const { videoWidth, videoHeight } = this.video;
         const isFrontCamera = this.currentFacingMode === 'user';
 
+        // ====================================================================
+        // STEP 1: DRAW VIDEO FRAME TO CANVAS
+        // ====================================================================
+        // For front camera: mirror horizontally (like a selfie)
+        // For back camera: draw normally
         this.outputCtx.save();
         if (isFrontCamera) {
             // Mirror for front camera (selfie mode)
+            // Scale X by -1 to flip horizontally
             this.outputCtx.scale(-1, 1);
             this.outputCtx.drawImage(this.video, -videoWidth, 0, videoWidth, videoHeight);
         } else {
@@ -438,50 +556,74 @@ class FaceMorphApp {
         }
         this.outputCtx.restore();
 
+        // ====================================================================
+        // STEP 2: PROCESS FACE LANDMARKS
+        // ====================================================================
         if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+            // Face detected! Extract the 468 landmark points
             const landmarks = results.multiFaceLandmarks[0];
-            // Adjust landmarks based on camera mode
+
+            // Convert normalized coordinates (0-1) to pixel coordinates
+            // Also mirror X coordinates for front camera
             if (isFrontCamera) {
                 this.cameraLandmarks = landmarks.map(pt => [(1 - pt.x) * videoWidth, pt.y * videoHeight]);
             } else {
                 this.cameraLandmarks = landmarks.map(pt => [pt.x * videoWidth, pt.y * videoHeight]);
             }
+
             this.state.faceDetected = true;
             this.noFaceWarning.classList.remove('visible');
 
+            // ================================================================
+            // STEP 3: APPLY MORPH OR ADDON
+            // ================================================================
             if (this.state.selectedAddon) {
+                // Addon mode: draw glasses, hat, moustache, etc.
                 this.applyAddon();
             } else if (this.state.morphAmount > 0.01 && this.targetImage && this.targetLandmarks) {
+                // Morph mode: transform face to look like target
                 this.applyMorph();
             }
         } else {
+            // No face detected
             this.state.faceDetected = false;
             this.cameraLandmarks = null;
             this.noFaceWarning.classList.add('visible');
         }
 
+        // ====================================================================
+        // STEP 4: APPLY COLOR EFFECTS
+        // ====================================================================
+        // Apply B&W or Purple filter if selected
         this.applyColorEffect();
     }
 
     // ============ EFFECTS ============
 
+    /**
+     * Apply color effect (B&W or Purple) to the output canvas.
+     * Modifies pixels directly using ImageData.
+     */
     applyColorEffect() {
         if (this.state.currentEffect === 'none') return;
 
         const { videoWidth, videoHeight } = this.video;
         const imageData = this.outputCtx.getImageData(0, 0, videoWidth, videoHeight);
-        const data = imageData.data;
+        const data = imageData.data;  // Uint8ClampedArray: [R,G,B,A, R,G,B,A, ...]
 
         if (this.state.currentEffect === 'bw') {
+            // Convert to grayscale using luminance formula
+            // Human eyes are most sensitive to green, then red, then blue
             for (let i = 0; i < data.length; i += 4) {
                 const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
                 data[i] = data[i + 1] = data[i + 2] = gray;
             }
         } else if (this.state.currentEffect === 'purple') {
+            // Purple tint: boost red and blue, reduce green
             for (let i = 0; i < data.length; i += 4) {
-                data[i] = Math.min(255, data[i] * 1.1 + 30);
-                data[i + 1] = Math.max(0, data[i + 1] * 0.7);
-                data[i + 2] = Math.min(255, data[i + 2] * 1.2 + 40);
+                data[i] = Math.min(255, data[i] * 1.1 + 30);      // Red: boost
+                data[i + 1] = Math.max(0, data[i + 1] * 0.7);     // Green: reduce
+                data[i + 2] = Math.min(255, data[i + 2] * 1.2 + 40); // Blue: boost
             }
         }
 
@@ -490,21 +632,47 @@ class FaceMorphApp {
 
     // ============ MORPH ============
 
+    /**
+     * ========================================================================
+     * APPLY MORPH - Transform User's Face
+     * ========================================================================
+     * This is the main morphing function. It:
+     * 1. Gets pixel data from current canvas (camera frame)
+     * 2. Gets pixel data from target image
+     * 3. Calls morphEngine to perform triangulation and warping
+     * 4. Writes the result back to the canvas
+     * 
+     * The morph amount (alpha) controls how much of the target face shows:
+     * - alpha = 0: 100% camera face
+     * - alpha = 0.5: 50% blend
+     * - alpha = 1: 100% target face (fully morphed)
+     */
     applyMorph() {
         if (!this.cameraLandmarks || !this.targetLandmarks) return;
 
         const { videoWidth, videoHeight } = this.video;
-        const alpha = this.state.morphAmount;
+        const alpha = this.state.morphAmount;  // 0.0 to 1.0
 
         try {
+            // Get pixel data from canvas (current camera frame)
             const srcData = this.outputCtx.getImageData(0, 0, videoWidth, videoHeight);
+
+            // Get pixel data from target image
             const targetData = this.targetCtx.getImageData(0, 0, this.targetCanvas.width, this.targetCanvas.height);
+
+            // Create output buffer for the morphed result
             const outputData = this.outputCtx.createImageData(videoWidth, videoHeight);
 
+            // Check if morphing to an animal (uses different blending)
             const isAnimal = this.state.currentCategory === 'animals';
+
+            // Call the morph engine to do the heavy lifting
+            // This performs triangulation, warping, and blending
             this.morphEngine.morphFace(srcData, targetData, this.cameraLandmarks, this.targetLandmarks, alpha, outputData, isAnimal);
+
+            // Write the morphed result to the canvas
             this.outputCtx.putImageData(outputData, 0, 0);
-        } catch (e) { }
+        } catch (e) { /* Silently handle errors */ }
     }
 
     // ============ ADDON ============
